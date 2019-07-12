@@ -1,0 +1,12 @@
+P99_Latency(msec),1.00
+Total_Missing,-33
+Avg_Latency(msec),0.30
+P15_Latency(msec),0.00
+P25_Latency(msec),0.00
+P50_Latency(msec),0.00
+P75_Latency(msec),1.00
+P95_Latency(msec),1.00
+Total_Error_Client,0
+Total_Sent,151
+Total_Recv,335
+P90_Latency(msec),1.00

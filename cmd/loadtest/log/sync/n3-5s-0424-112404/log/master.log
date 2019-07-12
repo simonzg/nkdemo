@@ -1,0 +1,5 @@
+{"level":"info","ts":"2019-04-24T11:24:05.979-0700","msg":"Master Stat: ","id":"master","sent":30,"recv":69,"error_count":0,"seconds":1}
+{"level":"info","ts":"2019-04-24T11:24:06.978-0700","msg":"Master Stat: ","id":"master","sent":60,"recv":138,"error_count":0,"seconds":2}
+{"level":"info","ts":"2019-04-24T11:24:07.980-0700","msg":"Master Stat: ","id":"master","sent":90,"recv":206,"error_count":0,"seconds":3}
+{"level":"info","ts":"2019-04-24T11:24:08.980-0700","msg":"Master Stat: ","id":"master","sent":120,"recv":276,"error_count":0,"seconds":4}
+{"level":"info","ts":"2019-04-24T11:24:09.978-0700","msg":"Master Stat: ","id":"master","sent":151,"recv":349,"error_count":0,"seconds":5}

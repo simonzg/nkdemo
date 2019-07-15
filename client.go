@@ -76,7 +76,7 @@ func (c *Client) readPump() {
 			break
 		}
 		// message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
-		c.hub.broadcast <- message
+		c.hub.broadcast <- &MessageEnvelope{fromClient: c.id, data: message}
 	}
 }
 
@@ -110,21 +110,19 @@ func (c *Client) writePump() {
 				SpacePresence: &server.SpacePresence{Changes: []*server.Entity{&server.Entity{Position: &server.V3{X: 1, Y: 2, Z: 3}}}},
 			}}
 			err = proto.Unmarshal(message, e)
-			i, err := w.Write(message)
+			_, err = w.Write(message)
 
-			fmt.Println(c.id, "Send: ", e.CollationId, "i:", i, "N=", len(c.send))
+			// fmt.Println(c.id, "Send: ", e.CollationId, "i:", i, "N=", len(c.send))
 
 			// Add queued chat messages to the current websocket message.
-			/*
-				n := len(c.send)
-				for i := 0; i < n; i++ {
-					message = <-c.send
-					e = &server.Envelope{}
-					err = proto.Unmarshal(message, e)
-					i, err = w.Write(message)
-					fmt.Println(c.id, "Send: ", e.CollationId, "i:", i, "Err:", err)
-				}
-			*/
+			n := len(c.send)
+			for i := 0; i < n; i++ {
+				message = <-c.send
+				e = &server.Envelope{}
+				err = proto.Unmarshal(message, e)
+				_, err = w.Write(message)
+				// fmt.Println(c.id, "Send: ", e.CollationId, "i:", i, "Err:", err)
+			}
 
 			if err := w.Close(); err != nil {
 				return

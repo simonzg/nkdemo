@@ -3,13 +3,15 @@ package simulator
 import (
 	"encoding/csv"
 	"fmt"
-	"math/rand"
+
+	// "math/rand"
 	"os"
 	"time"
 
+	"nakama/server"
+
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
-	"nakama/server"
 )
 
 type SyncRecord struct {
@@ -65,12 +67,12 @@ type SyncWorker struct {
 func NewSyncWorker(logger *zap.Logger, logDir, customID, name string, outDir string, serverHost string, port int, interval int64) *SyncWorker {
 	client := NewNKClient(logger, serverHost, port)
 	l := logger.With(zap.String("customID", customID), zap.String("component", "worker"))
-	offset := rand.Intn(5)
-	sign := rand.Intn(1)
-	if sign == 0 {
-		offset = -offset
-	}
-	interval = interval + int64(offset)
+	// offset := rand.Intn(5)
+	// sign := rand.Intn(1)
+	// if sign == 0 {
+	// offset = -offset
+	// }
+	interval = interval
 	return &SyncWorker{
 		logger:   l,
 		client:   client,
@@ -121,15 +123,29 @@ func (w *SyncWorker) recvPump() {
 			return
 		}
 
-		e := &server.Envelope{}
-		// fmt.Println("Recved: ", )
-		err = proto.Unmarshal([]byte(data), e)
-		if err != nil {
-			fmt.Println("Unmarshal error", err)
-		}
+		for len(data) > 0 {
+			w.logger.Info("Recved: ", zap.String("data", string(data)))
 
-		w.recvCh <- e
-		w.logger.Info("Recved: ", zap.String("data", string(data)))
+			e := &server.Envelope{}
+			err = proto.Unmarshal([]byte(data), e)
+			// fmt.Println("Recved: |", string(data), "|Envelope: ", e.CollationId+"|")
+			if err != nil {
+				fmt.Println("Unmarshal error", err)
+				break
+			}
+			bs, err := proto.Marshal(e)
+			if err != nil {
+				fmt.Println("Marshal error: ", err)
+				break
+			}
+			if len(data) >= len(bs) {
+				data = data[:len(data)-len(bs)]
+			} else {
+				break
+			}
+
+			w.recvCh <- e
+		}
 	}
 }
 
@@ -210,10 +226,10 @@ func (w *SyncWorker) Shutdown(code ExitCode) {
 func (w *SyncWorker) processRecv(e *server.Envelope) {
 	hash := e.CollationId
 	if hash == "" {
-		// fmt.Println("empty envelope, skip")
+		fmt.Println("empty envelope, skip")
 		return
 	}
-	w.logger.Info("Record Recv: ", zap.String("hash", hash))
+	w.logger.Info("Process Recv: ", zap.String("hash", hash))
 
 	// only update records when receive SpacePresence message
 	w.recvCount += 1

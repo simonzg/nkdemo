@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strings"
 )
 
 const (
@@ -24,8 +25,8 @@ const (
 )
 
 type SyncAnalyst struct {
-	data       map[string]*TsRecord
-	latencyMap map[int64]float64
+	data       map[string][]*SyncRecord
+	latencyMap map[TsSentRecord]TsRecvRecord
 	results    map[string]string
 	count      int
 
@@ -38,14 +39,25 @@ type RecvRecord struct {
 }
 
 type TsRecord struct {
+	id          string
 	sentAt      int64
 	recvRecords []*RecvRecord
+}
+type TsSentRecord struct {
+	id     string
+	sentAt int64
+	hash   string
+}
+
+type TsRecvRecord struct {
+	recvRecords []*SyncRecord
+	avgLatency  float64
 }
 
 func NewSyncAnalyst(count, errorCount int) *SyncAnalyst {
 	analyst := &SyncAnalyst{
-		data:       make(map[string]*TsRecord),
-		latencyMap: make(map[int64]float64),
+		data:       make(map[string][]*SyncRecord),
+		latencyMap: make(map[TsSentRecord]TsRecvRecord), // sent info -
 		results:    make(map[string]string),
 
 		count:     count,
@@ -59,56 +71,46 @@ func NewSyncAnalyst(count, errorCount int) *SyncAnalyst {
 func (a *SyncAnalyst) Add(records []*SyncRecord) {
 	for _, r := range records {
 		hash := r.hash
-		tss, ok := a.data[hash]
+		_, ok := a.data[hash]
+		if !ok {
+			a.data[hash] = make([]*SyncRecord, 0)
+		}
 		if r.direction == IN {
-			// recv in
-			a.totalRecv += 1
-			if ok {
-				a.data[hash].recvRecords = append(tss.recvRecords, &RecvRecord{recvAt: r.timestamp, id: r.id})
-			} else {
-				a.data[hash] = &TsRecord{recvRecords: []*RecvRecord{&RecvRecord{recvAt: r.timestamp, id: r.id}}}
-			}
+			a.totalRecv++
+			a.data[hash] = append(a.data[hash], r)
 		} else if r.direction == OUT {
 			// send out
-			a.totalSent += 1
-			if ok {
-				a.data[hash].sentAt = r.timestamp
-			} else {
-				a.data[hash] = &TsRecord{recvRecords: make([]*RecvRecord, 0), sentAt: r.timestamp}
-			}
+			a.totalSent++
+			a.data[hash] = append([]*SyncRecord{r}, a.data[hash]...)
 		}
 	}
 }
 
 func (a *SyncAnalyst) analyze(numOfAccounts int, ids []string) {
 
-	missing := make(map[string]map[string]bool)
-	for hash, tsRecord := range a.data {
-		if tsRecord == nil || tsRecord.sentAt == 0 {
-			continue
-		}
-		if len(tsRecord.recvRecords) == 0 {
+	missing := make(map[string]bool)
+	for hash, records := range a.data {
+		if records == nil {
 			continue
 		}
 
-		n := len(tsRecord.recvRecords)
-		sentAt := tsRecord.sentAt
+		n := len(records)
+		if records[0].direction != OUT {
+			fmt.Println("Error data!")
+			return
+		}
+		sentRecord := records[0]
+		sentAt := sentRecord.timestamp
+		recvCount := n - 1
 		var sum int64
-		for _, r := range tsRecord.recvRecords {
-			sum += r.recvAt - sentAt
+		for _, recvRecord := range records[1:] {
+			sum += recvRecord.timestamp - sentAt
 		}
-		avg := float64(sum) / float64(n)
-		a.latencyMap[sentAt] = avg
+		avg := float64(sum) / float64(recvCount)
+		a.latencyMap[TsSentRecord{id: sentRecord.id, sentAt: sentRecord.timestamp, hash: hash}] = TsRecvRecord{recvRecords: records[1:], avgLatency: avg}
 
-		if len(tsRecord.recvRecords) < numOfAccounts {
-			idMap := make(map[string]bool)
-			for _, id := range ids {
-				idMap[id] = true
-			}
-			for _, rr := range tsRecord.recvRecords {
-				delete(idMap, rr.id)
-			}
-			missing[hash] = idMap
+		if n < numOfAccounts {
+			missing[hash] = true
 		}
 	}
 
@@ -119,8 +121,8 @@ func (a *SyncAnalyst) analyze(numOfAccounts int, ids []string) {
 	fmt.Println("---------------")
 
 	avgs := make([]float64, 0)
-	for _, avg := range a.latencyMap {
-		avgs = append(avgs, avg)
+	for _, recvRecord := range a.latencyMap {
+		avgs = append(avgs, recvRecord.avgLatency)
 	}
 
 	sort.Float64s(avgs)
@@ -164,9 +166,15 @@ func (a *SyncAnalyst) saveToFile(outDir string) {
 	latencyWriter := csv.NewWriter(latencyFile)
 	defer latencyWriter.Flush()
 
-	latencyWriter.Write([]string{"Sent_Timestamp", "Average_Duration"})
-	for ts, avgDuration := range a.latencyMap {
-		latencyWriter.Write([]string{fmt.Sprintf("%d", ts), fmt.Sprintf("%.2f", avgDuration)})
+	latencyWriter.Write([]string{"Hash", "Sent_By", "Sent_Timestamp", "Average_Duration", "Recv_By"})
+	for sentRecord, recvRecord := range a.latencyMap {
+
+		recvIds := make([]string, 0)
+		for _, v := range recvRecord.recvRecords {
+			recvIds = append(recvIds, fmt.Sprintf("%s(%d)", v.id, v.timestamp-sentRecord.sentAt))
+		}
+		recvBy := strings.Join(recvIds, ",")
+		latencyWriter.Write([]string{sentRecord.hash, sentRecord.id, fmt.Sprintf("%d", sentRecord.sentAt), fmt.Sprintf("%.2f", recvRecord.avgLatency), recvBy})
 	}
 
 	resultFilename := path.Join(outDir, "result.csv")
